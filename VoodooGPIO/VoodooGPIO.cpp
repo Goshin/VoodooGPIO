@@ -944,6 +944,8 @@ IOReturn VoodooGPIO::registerInterrupt(int pin, OSObject *target, IOInterruptAct
         community->pinInterruptAction[communityidx] = handler;
         community->pinInterruptRefcons[communityidx] = refcon;
         *community->isActiveCommunity = true;
+
+        intel_gpio_irq_set_type(hw_pin, community->interruptTypes[communityidx]);
     } else {
         IOLog("%s::Unable to allocate interrupt pin", getName());
         return kIOReturnNoResources;
@@ -952,7 +954,8 @@ IOReturn VoodooGPIO::registerInterrupt(int pin, OSObject *target, IOInterruptAct
     IOLog("%s::Successfully registered hardware pin 0x%02X for GPIO IRQ pin 0x%02X\n", getName(), hw_pin, pin);
 
     if (registered_pin_list->getCount() == 1) {
-        return getProvider()->registerInterrupt(0, this, OSMemberFunctionCast(IOInterruptAction, this, &VoodooGPIO::InterruptOccurred));
+        getProvider()->registerInterrupt(0, this, OSMemberFunctionCast(IOInterruptAction, this, &VoodooGPIO::InterruptOccurred));
+        return getProvider()->enableInterrupt(0);
     }
     return kIOReturnSuccess;
 }
@@ -984,6 +987,7 @@ IOReturn VoodooGPIO::unregisterInterrupt(int pin) {
     }
 
     if (registered_pin_list->getCount() == 0) {
+        getProvider()->disableInterrupt(0);
         return getProvider()->unregisterInterrupt(0);
     }
     return kIOReturnSuccess;
@@ -993,18 +997,13 @@ IOReturn VoodooGPIO::unregisterInterrupt(int pin) {
  * @param pin 'Software' pin number (i.e. GpioInt).
  */
 IOReturn VoodooGPIO::enableInterrupt(int pin) {
-    struct intel_community *community;
-    SInt32 hw_pin = intel_gpio_to_pin(pin, &community, nullptr);
+    SInt32 hw_pin = intel_gpio_to_pin(pin, nullptr, nullptr);
     if (hw_pin < 0)
         return kIOReturnNoInterrupt;
 
-    unsigned communityidx = hw_pin - community->pin_base;
-    if (community->pinInterruptActionOwners[communityidx]) {
-        intel_gpio_irq_set_type(hw_pin, community->interruptTypes[communityidx]);
-        intel_gpio_irq_mask_unmask(hw_pin, false);
-        return getProvider()->enableInterrupt(0);
-    }
-    return kIOReturnNoInterrupt;
+    intel_gpio_irq_mask_unmask(hw_pin, false);
+
+    return kIOReturnSuccess;
 }
 
 /**
@@ -1016,7 +1015,8 @@ IOReturn VoodooGPIO::disableInterrupt(int pin) {
         return kIOReturnNoInterrupt;
 
     intel_gpio_irq_mask_unmask(hw_pin, true);
-    return getProvider()->disableInterrupt(0);
+
+    return kIOReturnSuccess;
 }
 
 /**
